@@ -637,6 +637,7 @@ the client used to send the request.
 | `client.ignore-redirect`               | Whether to ignore redirects (true) or follow them (false, default).           | `false`         |
 | `client.timeout`                       | Duration before timing out.                                                   | `10s`           |
 | `client.dns-resolver`                  | Override the DNS resolver using the format `{proto}://{host}:{port}`.         | `""`            |
+| `client.http-resolve-overrides`        | Override the HTTP DNS result using the format `{host}:{port}:{newHost}`.      | `[]`            |
 | `client.oauth2`                        | OAuth2 client configuration.                                                  | `{}`            |
 | `client.oauth2.token-url`              | The token endpoint URL                                                        | required `""`   |
 | `client.oauth2.client-id`              | The client id which should be used for the `Client credentials flow`          | required `""`   |
@@ -688,6 +689,19 @@ endpoints:
     url: "https://your.health.api/health"
     client:
       dns-resolver: "tcp://8.8.8.8:53"
+    conditions:
+      - "[STATUS] == 200"
+```
+
+This example shows how you can use specific ip address for your domain:
+
+```yaml
+endpoints:
+  - name: with-custom-ip-address
+    url: "https://your.health.api/health"
+    client:
+      http-resolve-overrides:
+        - "your.health.api:443:10.88.0.10"
     conditions:
       - "[STATUS] == 200"
 ```
