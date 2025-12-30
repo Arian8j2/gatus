@@ -4,11 +4,13 @@ import (
 	"context"
 	"crypto/tls"
 	"errors"
+	"fmt"
 	"net"
 	"net/http"
 	"net/url"
 	"regexp"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/TwiN/gatus/v5/config/tunneling/sshtunnel"
@@ -60,6 +62,10 @@ type Config struct {
 	// DNSResolver override for the HTTP client
 	// Expected format is {protocol}://{host}:{port}, e.g. tcp://8.8.8.8:53
 	DNSResolver string `yaml:"dns-resolver,omitempty"`
+
+	// Override DNS result for http requests if matched against specific host, Similar to --resolve of curl
+	// Expected format is {host}:{port}:{newHost}, e.g. example.com:443:104.18.27.120
+	HttpResolveOverrides []string `yaml:"http-resolve-overrides"`
 
 	// OAuth2Config is the OAuth2 configuration used for the client.
 	//
@@ -244,6 +250,7 @@ func (c *Config) getHTTPClient() *http.Client {
 				c.httpClient.Transport.(*http.Transport).Proxy = http.ProxyURL(proxyURL)
 			}
 		}
+		dialer := &net.Dialer{}
 		if c.HasCustomDNSResolver() {
 			dnsResolver, err := c.parseDNSResolver()
 			if err != nil {
@@ -251,7 +258,7 @@ func (c *Config) getHTTPClient() *http.Client {
 				// It shouldn't happen, but if it does, we'll log it... Better safe than sorry ;)
 				logr.Errorf("[client.getHTTPClient] THIS SHOULD NOT HAPPEN. Silently ignoring invalid DNS resolver due to error: %s", err.Error())
 			} else {
-				dialer := &net.Dialer{
+				dialer = &net.Dialer{
 					Resolver: &net.Resolver{
 						PreferGo: true,
 						Dial: func(ctx context.Context, network, address string) (net.Conn, error) {
@@ -260,10 +267,21 @@ func (c *Config) getHTTPClient() *http.Client {
 						},
 					},
 				}
-				c.httpClient.Transport.(*http.Transport).DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
-					return dialer.DialContext(ctx, network, addr)
+			}
+		}
+		c.httpClient.Transport.(*http.Transport).DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
+			for _, override := range c.HttpResolveOverrides {
+				parts := strings.Split(override, ":")
+				if len(parts) != 3 {
+					continue
+				}
+				expectedAddr := override[:strings.LastIndex(override, ":")]
+				if addr == expectedAddr {
+					addr = fmt.Sprintf("%s:%s", parts[2], parts[1])
+					break
 				}
 			}
+			return dialer.DialContext(ctx, network, addr)
 		}
 		if c.HasOAuth2Config() && c.HasIAPConfig() {
 			logr.Errorf("[client.getHTTPClient] Error: Both Identity-Aware-Proxy and Oauth2 configuration are present.")
